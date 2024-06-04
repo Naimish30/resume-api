@@ -29,6 +29,11 @@ def extract_phone_numbers_from_text(text):
     phone_numbers = re.findall(phone_number_pattern, text)
     return phone_numbers
 
+@app.route('/get',methods=['GET'])
+def say_hello():
+    return jsonify({"message":"HEllo"}),200
+
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
