@@ -1,7 +1,19 @@
 {
-  "functions": {
-    "api/upload": {
-      "handler": "api/upload.py"
+  "version": 2,
+  "name": "flask-app",
+  "builds": [
+    {
+      "src": "main.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
     }
-  }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "main.py"
+    }
+  ]
 }
