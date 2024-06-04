@@ -1,6 +1,6 @@
 {
   "functions": {
-    "upload": {
+    "api/upload": {
       "handler": "api/upload.py"
     }
   }
