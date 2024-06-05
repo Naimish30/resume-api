@@ -1,17 +1,21 @@
-import os
+from pdfminer.high_level import extract_text
+from spacy.matcher import Matcher
 import re
+import os
+import spacy
+import pytesseract
+from pdf2image import convert_from_path
+import pandas as pd
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
-from pdfminer.high_level import extract_text
-from pdf2image import convert_from_path
-import pytesseract
-import nltk
-from nltk.tokenize import word_tokenize, sent_tokenize
-from nltk.tag import pos_tag
-from nltk.chunk import ne_chunk
 from spacy.lang.en.stop_words import STOP_WORDS
-import pandas as pd
-from fuzzywuzzy import process
+from fuzzywuzzy import fuzz
+
+try:
+    nlp = spacy.load('en_core_web_sm')
+except OSError:
+    os.system("python -m spacy download en_core_web_sm")
+    nlp = spacy.load('en_core_web_sm')
 
 app = Flask(__name__)
 
@@ -21,22 +25,17 @@ DATA_FOLDER = 'data'
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-nltk.download('maxent_ne_chunker')
-nltk.download('words')
-
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def extract_names(text):
-    names = []
-    for sent in sent_tokenize(text):
-        for chunk in ne_chunk(pos_tag(word_tokenize(sent))):
-            if hasattr(chunk, 'label') and chunk.label() == 'PERSON':
-                names.append(' '.join(c[0] for c in chunk.leaves()))
-    return names
+    matcher = Matcher(nlp.vocab)
+    pattern = [{'POS': 'PROPN'}, {'POS': 'PROPN'}]
+    matcher.add("NAME", [pattern])
+    doc = nlp(text)
+    matches = matcher(doc)
+    matched_names = [doc[start:end].text for match_id, start, end in matches]
+    return matched_names
 
 def extract_emails_from_text(text):
     email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
@@ -48,22 +47,32 @@ def extract_phone_numbers_from_text(text):
     phone_numbers = re.findall(phone_pattern, text)
     return phone_numbers
 
-@app.route('/get', methods=['GET'])
+@app.route('/get',methods=['GET'])
 def say_hello():
-    return jsonify({"message": "HEllo"}), 200
-
+    return jsonify({"message":"HEllo"}),200
 
 def find_closest_name(names, email):
-    email_prefix = email.split('@')[0]
-    closest_name = process.extractOne(email_prefix, names)
-    return closest_name[0] if closest_name else "No name found"
+    email_prefix = email.split('@')[0].lower()
+    names_lower = [name.lower() for name in names]
+    similarities = [fuzz.token_set_ratio(email_prefix, name) for name in names_lower]
+    max_similarity_index = similarities.index(max(similarities))
+    return names[max_similarity_index] if max(similarities) > 30 else names[0]
 
 def find_skills_in_text(text, skills):
-    cleaned_text = ' '.join(token.lower() for token in word_tokenize(text) if token.lower() not in STOP_WORDS)
+    doc = nlp(text.replace('\r', ''))
+    cleaned_text = ' '.join(token.text.lower() for token in doc if token.text.lower() not in STOP_WORDS)
     found_skills = []
+
     for skill in skills:
-        if skill.lower() in cleaned_text:
-            found_skills.append(skill)
+        skill_lower = skill.lower()
+        if skill_lower in cleaned_text:
+            r_index = cleaned_text.find(skill_lower)
+            if len(skill_lower) == 1:
+                if cleaned_text[r_index-1:r_index+2] == f" {skill_lower} ":
+                    found_skills.append(skill)
+            else:
+                found_skills.append(skill)
+
     return found_skills
 
 @app.route('/upload', methods=['POST'])
